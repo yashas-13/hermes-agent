@@ -3049,8 +3049,29 @@ function resolveGitBinary() {
   const candidates = []
 
   if (localAppData) {
-    candidates.push(path.join(localAppData, 'hermes', 'git', 'cmd', 'git.exe'))
-    candidates.push(path.join(localAppData, 'hermes', 'git', 'bin', 'git.exe'))
+    const hermesRoot = path.join(localAppData, 'hermes')
+    candidates.push(path.join(hermesRoot, 'git', 'cmd', 'git.exe'))
+    candidates.push(path.join(hermesRoot, 'git', 'bin', 'git.exe'))
+
+    // The bootstrap/PM flow can keep Git only in the content-addressed tool
+    // store instead of materializing the legacy <hermes>\\git tree. Desktop
+    // update checks must resolve the same managed installation in that shape.
+    try {
+      const toolRoot = path.join(hermesRoot, 'tools')
+      const gitStores = fs
+        .readdirSync(toolRoot, { withFileTypes: true })
+        .filter(entry => entry.isDirectory() && entry.name.toLowerCase().startsWith('git-'))
+        .map(entry => entry.name)
+        .sort((a, b) => b.localeCompare(a))
+
+      for (const store of gitStores) {
+        candidates.push(path.join(toolRoot, store, 'cmd', 'git.exe'))
+        candidates.push(path.join(toolRoot, store, 'bin', 'git.exe'))
+      }
+    } catch {
+      // The managed tool store is optional; keep probing the normal Windows
+      // Git locations below when it is absent or unreadable.
+    }
   }
 
   candidates.push(path.join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Git', 'cmd', 'git.exe'))
