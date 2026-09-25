@@ -373,6 +373,27 @@ class TestTrackForgetQuick:
         assert not p.exists()
 
 
+    def test_quick_keeps_old_large_file_for_prompt_only_cleanup(self, _isolate_env):
+        """Files above the 500 MiB threshold are prompt-only and must survive quick()."""
+        dg = _load_lib()
+        p = _isolate_env / "large-temp.bin"
+        p.write_bytes(b"x")
+        old_ts = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+        dg.save_tracked([{
+            "path": str(p),
+            "category": "temp",
+            "timestamp": old_ts,
+            "size": dg._LARGE_FILE_BYTES + 1,
+        }])
+
+        summary = dg.quick()
+
+        assert summary["deleted"] == 0
+        assert p.exists(), "large files must never be deleted by quick()"
+        remaining = dg.load_tracked()
+        assert len(remaining) == 1
+        assert remaining[0]["path"] == str(p)
+
     def test_forget_removes_entry(self, _isolate_env):
         dg = _load_lib()
         p = _isolate_env / "keep.tmp"
