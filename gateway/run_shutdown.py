@@ -1030,6 +1030,16 @@ class GatewayShutdownMixin:
                 )
         notified: set[tuple[str, str, Optional[str]]] = set()
         for session_key in self._snapshot_running_agents():
+            # A cached agent can outlive its durable turn state (for example after a slash command
+            # created a per-message session). Do not treat a finished session's persisted origin as
+            # an active-chat shutdown target: its message-specific thread is valid for that session's
+            # own replies, but shutdown broadcasts must fall through to the configured home channel.
+            try:
+                entry = self.session_store._entries.get(session_key) if getattr(self, "session_store", None) else None
+                if entry is not None and getattr(entry, "active_turn_token", _UNSET) is None and getattr(entry, "suspended", _UNSET) is False:
+                    continue
+            except Exception as exc:
+                logger.debug("Failed to inspect session activity for shutdown notification %s: %s", session_key, exc)
             target = await self._shutdown_notification_target(session_key)
             if target is None:
                 continue
