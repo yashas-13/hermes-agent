@@ -263,7 +263,9 @@ def quick() -> Dict[str, Any]:
         if _is_protected_dir(p):
             _log(f"SKIPPED: {p} (protected top-level dir)")
             continue
-        if not _is_auto_delete(cat, age):
+        # Large files are prompt-only by contract; never delete them in quick().
+        # Keep them tracked so `deep` can surface them for explicit confirmation.
+        if item["size"] > _LARGE_FILE_BYTES or not _is_auto_delete(cat, age):
             new_tracked.append(item)
             continue
         err = _delete_item(item)
