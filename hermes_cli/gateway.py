@@ -4960,6 +4960,45 @@ def _block_until_terminated() -> None:
         threading.Event().wait()
 
 
+def _restart_owned_legacy_bare_systemd_unit(system: bool = False) -> bool:
+    """Restart a pre-profile-identity bare unit when it explicitly belongs to this HERMES_HOME.
+
+    PR #106611 changed custom-home service names from the historical bare
+    ``hermes-gateway.service`` to a profile/hash-specific name. Existing
+    installs keep the bare unit, so lifecycle commands must recognize that
+    unit by its pinned home before falling back to an unsupervised gateway.
+    Foreign or unpinned units are deliberately ignored.
+    """
+    if not supports_systemd_services() or get_service_name() == _SERVICE_BASE:
+        return False
+
+    unit_path = (
+        _SYSTEM_UNIT_DIR / f"{_SERVICE_BASE}.service"
+        if system
+        else user_systemd_unit_dir() / f"{_SERVICE_BASE}.service"
+    )
+    if not unit_path.exists():
+        return False
+
+    pinned_home = _hermes_home_pinned_by_unit(unit_path)
+    if not pinned_home:
+        return False
+    try:
+        owns_home = Path(pinned_home).expanduser().resolve() == get_hermes_home().resolve()
+    except OSError:
+        return False
+    if not owns_home:
+        return False
+
+    _systemd_scope_preamble("restart", system, require_installed=False, preflight_user=True)
+    try:
+        _run_systemctl(["restart", _SERVICE_BASE], system=system, check=True, timeout=90)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return False
+
+    print(f"✓ Restarted legacy {_SERVICE_BASE}.service for the current HERMES_HOME")
+    return True
+
 def _installed_service_kind_for(windows) -> str | None:
     """``"systemd"`` / ``"launchd"`` when the unit/plist exists, else ``"windows"`` iff ``windows()``
     (a thunk so it runs last, like every caller's original ladder), else None."""
@@ -5410,6 +5449,11 @@ def _cmd_restart(args):
         return
     if restart_all:
         _restart_all(system)
+        return
+
+    # A pre-#106611 custom-home install may still be supervised by the historical bare
+    # systemd unit. Recognize that owned unit before falling back to a foreground gateway.
+    if _restart_owned_legacy_bare_systemd_unit(system=system):
         return
 
     # The Windows restart path handles both registered installs and detached restarts.
