@@ -49,11 +49,25 @@ def validate_environment(python: Path, *, env: dict, cwd: Path) -> None:
 
 def repair_dependencies(project_root: Path) -> None:
     """Restore this installation's recorded set; never repair a foreign tree."""
-    from pm.client import sync_venv
+    from pm.client import lock_project, sync_venv
     from pm.paths import repo_root
 
-    if Path(project_root).resolve() != repo_root().resolve():
+    root = Path(project_root).resolve()
+    if root != repo_root().resolve():
         raise InstallError("venv", "recovery root does not match this PM installation")
+
+    # The PM runtime hashes both files before it can even enter repair. A damaged/source-adopted
+    # install can retain pyproject.toml while losing pm/uv.lock, which previously made `hermes pm
+    # repair` die with an unhandled FileNotFoundError before sync_venv could repair anything.
+    # Recreate only the missing PM lock; an existing lock remains authoritative and is never rewritten.
+    pm_project = root / "pm"
+    pm_lock = pm_project / "uv.lock"
+    if not pm_lock.is_file():
+        try:
+            lock_project(pm_project, explicit=True)
+        except FileNotFoundError as exc:
+            raise InstallError("venv", "PM dependency lock is missing and could not be regenerated") from exc
+
     with contextlib.redirect_stdout(sys.stderr):
         sync_venv(repair=True)
 
