@@ -387,3 +387,36 @@ async def test_shutdown_notifications_are_fully_muted_when_flag_disabled():
     adapter.send.assert_not_awaited()
 
 
+
+
+@pytest.mark.asyncio
+async def test_shutdown_skips_finished_session_and_uses_home_channel(tmp_path, monkeypatch):
+    """A finished per-message session must not become the restart notice target."""
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+
+    runner, adapter = make_restart_runner()
+    source = make_restart_source(chat_id="stale-chat", chat_type="dm", thread_id="stale-thread")
+    session_key = build_session_key(source)
+    runner.config.platforms[Platform.TELEGRAM].home_channel = HomeChannel(
+        platform=Platform.TELEGRAM,
+        chat_id="home-42",
+        name="Ops Home",
+    )
+    runner._running_agents[session_key] = object()
+    runner.session_store._entries[session_key] = MagicMock(
+        origin=source,
+        active_turn_token=None,
+        suspended=False,
+    )
+    adapter.send = AsyncMock(return_value=SendResult(success=True, message_id="m"))
+
+    await runner._notify_active_sessions_of_shutdown()
+
+    targets = [call.args[0] for call in adapter.send.await_args_list]
+    assert targets == ["home-42"]
+    adapter.send.assert_awaited_once_with(
+        "home-42",
+        "⚠️ Hermes is shutting down — your current task will be interrupted. "
+        "When it is back online, send any message and I'll try to pick up where we left off.",
+        metadata={"_interim_send": True},
+    )
