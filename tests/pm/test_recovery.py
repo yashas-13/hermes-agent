@@ -225,3 +225,31 @@ def test_uncertain_profile_selection_skips_sync_but_not_admission_or_recorded_re
     assert result.stdout.strip() == "1.0"
     assert active_config.read_bytes() == before_config
     assert sibling_config.read_bytes() == damaged_config
+
+
+def test_repair_regenerates_missing_pm_lock_before_sync(tmp_path, monkeypatch):
+    """A source install missing pm/uv.lock must reach the repair engine instead of crashing in _inputs."""
+    import pm.paths as paths
+    import pm.recovery as recovery
+
+    project = tmp_path / "hermes-agent"
+    pm_project = project / "pm"
+    pm_project.mkdir(parents=True)
+    (pm_project / "pyproject.toml").write_text("[project]\nname='pm-runtime'\nversion='1'\n", encoding="utf-8")
+    monkeypatch.setattr(paths, "repo_root", lambda: project)
+
+    calls = []
+    def fake_lock_project(source, *, explicit=False, **kwargs):
+        calls.append((Path(source), explicit))
+        (Path(source) / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+
+    def fake_sync_venv(*, repair=False, **kwargs):
+        calls.append(("sync", repair))
+
+    monkeypatch.setattr("pm.client.lock_project", fake_lock_project)
+    monkeypatch.setattr("pm.client.sync_venv", fake_sync_venv)
+
+    recovery.repair_dependencies(project)
+
+    assert calls == [(pm_project, True), ("sync", True)]
+    assert (pm_project / "uv.lock").is_file()
