@@ -2784,3 +2784,55 @@ class TestUnitAnchoredServiceIdentity:
 
         assert os.environ["HERMES_HOME"] == str(alice_home)  # the sync really ran
         assert gateway_cli.get_service_name() == pre_sync_name
+
+
+class TestLegacyCustomHomeGatewayRestart:
+    def test_owned_bare_unit_is_restarted_instead_of_foreground_fallback(self, tmp_path, monkeypatch):
+        """A pre-#106611 bare unit for the same custom home remains the supervisor after an update."""
+        home = tmp_path / "hermes"
+        home.mkdir()
+        unit_dir = tmp_path / "systemd" / "user"
+        unit_dir.mkdir(parents=True)
+        unit_path = unit_dir / "hermes-gateway.service"
+        unit_path.write_text(
+            f'[Service]\\nEnvironment="HERMES_HOME={home}"\\n', encoding="utf-8"
+        )
+
+        calls = []
+        monkeypatch.setattr(gateway_cli, "supports_systemd_services", lambda: True)
+        monkeypatch.setattr(gateway_cli, "get_service_name", lambda: "hermes-gateway-a1b2c3d4")
+        monkeypatch.setattr(gateway_cli, "user_systemd_unit_dir", lambda: unit_dir)
+        monkeypatch.setattr(gateway_cli, "get_hermes_home", lambda: home)
+        monkeypatch.setattr(gateway_cli, "_systemd_scope_preamble", lambda *a, **k: False)
+        monkeypatch.setattr(
+            gateway_cli,
+            "_run_systemctl",
+            lambda args, **kwargs: calls.append((args, kwargs)),
+        )
+
+        assert gateway_cli._restart_owned_legacy_bare_systemd_unit() is True
+        assert calls == [
+            (["restart", "hermes-gateway"], {"system": False, "check": True, "timeout": 90})
+        ]
+
+    def test_foreign_bare_unit_is_not_restarted(self, tmp_path, monkeypatch):
+        """A bare unit for another HERMES_HOME must remain untouched."""
+        current_home = tmp_path / "current"
+        foreign_home = tmp_path / "foreign"
+        current_home.mkdir()
+        foreign_home.mkdir()
+        unit_dir = tmp_path / "systemd" / "user"
+        unit_dir.mkdir(parents=True)
+        (unit_dir / "hermes-gateway.service").write_text(
+            f'[Service]\\nEnvironment="HERMES_HOME={foreign_home}"\\n', encoding="utf-8"
+        )
+
+        monkeypatch.setattr(gateway_cli, "supports_systemd_services", lambda: True)
+        monkeypatch.setattr(gateway_cli, "get_service_name", lambda: "hermes-gateway-a1b2c3d4")
+        monkeypatch.setattr(gateway_cli, "user_systemd_unit_dir", lambda: unit_dir)
+        monkeypatch.setattr(gateway_cli, "get_hermes_home", lambda: current_home)
+        restarted = []
+        monkeypatch.setattr(gateway_cli, "_run_systemctl", lambda *a, **k: restarted.append((a, k)))
+
+        assert gateway_cli._restart_owned_legacy_bare_systemd_unit() is False
+        assert restarted == []
