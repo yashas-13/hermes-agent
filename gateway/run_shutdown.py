@@ -1036,7 +1036,7 @@ class GatewayShutdownMixin:
             # own replies, but shutdown broadcasts must fall through to the configured home channel.
             try:
                 entry = self.session_store._entries.get(session_key) if getattr(self, "session_store", None) else None
-                if entry is not None and getattr(entry, "active_turn_token", _UNSET) is None and getattr(entry, "suspended", _UNSET) is False:
+                if entry is not None and getattr(entry, "active_turn_token", object()) is None and getattr(entry, "suspended", object()) is False:
                     continue
             except Exception as exc:
                 logger.debug("Failed to inspect session activity for shutdown notification %s: %s", session_key, exc)
