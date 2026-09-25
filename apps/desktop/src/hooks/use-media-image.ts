@@ -1,3 +1,14 @@
+export function mediaImageFrameStyle(
+  dimensions: MediaImageDimensions | undefined,
+  fallbackRatio: number
+): CSSProperties {
+  const ratio = dimensions ? dimensions.width / dimensions.height : fallbackRatio
+  return {
+    aspectRatio: ratio,
+    width: `min(calc(var(--image-preview-height) * ${ratio}), var(--image-preview-max-width), 100%${dimensions ? `, ${dimensions.width}px` : ''})`
+  }
+}
+
 import { useStore } from '@nanostores/react'
 import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 
@@ -41,13 +52,7 @@ export function useMediaImage(
   const key = mediaImageKey(path, connection, owner)
   const ownerKey = mediaImageKey('', connection, owner)
 
-  const frameStyleForDimensions = (dimensions?: MediaImageDimensions): CSSProperties => {
-    const ratio = dimensions ? dimensions.width / dimensions.height : fallbackRatio
-    return {
-      aspectRatio: ratio,
-      width: `min(calc(var(--image-preview-height) * ${ratio}), var(--image-preview-max-width), 100%${dimensions ? `, ${dimensions.width}px` : ''})`
-    }
-  }
+  const frameStyleForDimensions = (dimensions?: MediaImageDimensions) => mediaImageFrameStyle(dimensions, fallbackRatio)
 
   const initialState = () => {
     const dimensions = intrinsic ?? getMediaImageDimensions(key)
