@@ -41,9 +41,16 @@ export function useMediaImage(
   const key = mediaImageKey(path, connection, owner)
   const ownerKey = mediaImageKey('', connection, owner)
 
+  const frameStyleForDimensions = (dimensions?: MediaImageDimensions): CSSProperties => {
+    const ratio = dimensions ? dimensions.width / dimensions.height : fallbackRatio
+    return {
+      aspectRatio: ratio,
+      width: `min(calc(var(--image-preview-height) * ${ratio}), var(--image-preview-max-width), 100%${dimensions ? `, ${dimensions.width}px` : ''})`
+    }
+  }
+
   const initialState = () => {
     const dimensions = intrinsic ?? getMediaImageDimensions(key)
-    const ratio = dimensions ? dimensions.width / dimensions.height : fallbackRatio
 
     return {
       key,
@@ -54,10 +61,7 @@ export function useMediaImage(
       frameStyle:
         !dimensions && !preservePendingFrame && isKnownBrokenMediaImage(key)
           ? undefined
-          : ({
-              aspectRatio: ratio,
-              width: `min(calc(var(--image-preview-height) * ${ratio}), var(--image-preview-max-width), 100%${dimensions ? `, ${dimensions.width}px` : ''})`
-            } satisfies CSSProperties),
+          : frameStyleForDimensions(dimensions),
       src: path && isInlineMediaSrc(path) ? path : '',
       loaded: false,
       failed: false
@@ -110,8 +114,13 @@ export function useMediaImage(
   return {
     ...state,
     onLoad: (image: HTMLImageElement) => {
-      rememberMediaImageDimensions(key, image.naturalWidth, image.naturalHeight)
-      setState(current => ({ ...current, loaded: true }))
+      const dimensions = { width: image.naturalWidth, height: image.naturalHeight }
+      rememberMediaImageDimensions(key, dimensions.width, dimensions.height)
+      setState(current => ({
+        ...current,
+        frameStyle: frameStyleForDimensions(dimensions),
+        loaded: true
+      }))
     },
     onError: () => {
       rememberMediaImageFailure(key)
