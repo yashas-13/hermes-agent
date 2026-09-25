@@ -320,3 +320,18 @@ class TestReasoningOffReachesTheWire:
         calls = loop_agent.client.chat.completions.create.call_args_list
         first = (calls[0].kwargs.get("extra_body") or {}).get("reasoning")
         assert first == {"enabled": True, "effort": "high"}, first
+
+
+class TestTruncationCeilingNotice:
+    def test_visible_partial_response_explains_output_limit(self, loop_agent):
+        """A visible partial that exhausts all continuation attempts must not look complete."""
+        loop_agent.client.chat.completions.create.side_effect = [
+            _truncated_text_response("The answer starts here.") for _ in range(4)
+        ]
+        result = _run(loop_agent, "write me a long report")
+
+        assert result["completed"] is False
+        assert result["partial"] is True
+        assert result["final_response"].startswith("The answer starts here.")
+        assert "Response cut short" in result["final_response"]
+        assert "output-token limit" in result["final_response"]

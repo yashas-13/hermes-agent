@@ -124,6 +124,10 @@ _CEILING_NO_TEXT = (
     "continuation attempt — its reasoning consumed the entire budget each time.\n\nTo fix this:\n"
     "→ Lower reasoning effort: `/reasoning low` or `/reasoning none`\n→ Or raise max_tokens for this model"
 )
+_CEILING_NOTICE = (
+    "⚠️ **Response cut short.** The model hit its output-token limit and could not finish "
+    "after several continuation attempts. Ask it to continue, or narrow the question."
+)
 # Below this many free tokens the prompt itself filled the window: a continuation nudge +
 # fragment costs ~100 tokens per attempt, so retrying only shrinks the room (#106120).
 _MIN_CONTINUATION_HEADROOM = 512
@@ -359,8 +363,11 @@ def _continue_text(st: _Trunc, _retry: TurnRetryState, assistant_message: Any) -
             f"{partial_response}\n\n{notice}" if partial_response else notice,
             f"Prompt used {filled[0]} of {filled[1]} context tokens; no room to answer",
         )
+    final_response = partial_response or _CEILING_NO_TEXT
+    if partial_response:
+        final_response = f"{partial_response}\n\n{_CEILING_NOTICE}"
     return st.end_turn(
-        partial_response or _CEILING_NO_TEXT,
+        final_response,
         "Response remained truncated after 4 continuation attempts",
     )
 
